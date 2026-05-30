@@ -102,11 +102,13 @@ def root():
             <script src="https://cdn.tailwindcss.com"></script>
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
             <style>
+                html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+                @media (max-width: 640px) { html { font-size: 14px; } }
                 .loading { border-top-color: #3498db; animation: spinner 1.5s linear infinite; }
                 @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
                 .tab-active { @apply bg-indigo-800 text-white shadow-inner; }
                 .sidebar-item { @apply flex items-center space-x-3 px-4 py-3 rounded-xl transition-all cursor-pointer hover:bg-indigo-800/50; }
-            </style>
+             </style>
         </head>
         <body class="bg-slate-50 min-h-screen font-sans text-slate-900 flex overflow-x-hidden">
             <!-- Mobile Sidebar Overlay -->
@@ -133,10 +135,10 @@ def root():
                 </nav>
 
                 <div class="p-6 mt-auto border-t border-indigo-800/50 bg-indigo-950/30">
-                    <p class="text-[10px] font-black uppercase text-indigo-400 mb-4 tracking-widest">當前使用者</p>
+                    <p class="text-xs font-black uppercase text-indigo-400 mb-4 tracking-widest">當前使用者</p>
                     <div class="space-y-3">
-                        <select id="userSelect" class="w-full bg-indigo-800 text-white px-3 py-2 rounded-lg text-sm border-none shadow-inner focus:ring-2 focus:ring-emerald-400"></select>
-                        <button onclick="addUser()" class="w-full bg-emerald-500 px-4 py-2 rounded-lg text-xs font-black text-white hover:bg-emerald-400 transition-all shadow-lg"><i class="fa-solid fa-plus mr-1"></i>新增用戶</button>
+                        <select id="userSelect" class="w-full bg-indigo-800 text-white px-3 py-2 rounded-lg text-base border-none shadow-inner focus:ring-2 focus:ring-emerald-400"></select>
+                        <button onclick="addUser()" class="w-full bg-emerald-500 px-4 py-2 rounded-lg text-sm font-black text-white hover:bg-emerald-400 transition-all shadow-lg"><i class="fa-solid fa-plus mr-1"></i>新增用戶</button>
                     </div>
                 </div>
             </aside>
@@ -151,31 +153,31 @@ def root():
                 </div>
 
                 <!-- Analyze Tab -->
-                <div id="tab-analyze" class="tab-content p-4 md:p-10 space-y-8 animate-in fade-in duration-500">
+                <div id="tab-analyze" class="tab-content p-5 md:p-10 space-y-8 animate-in fade-in duration-500">
                     <header class="flex justify-between items-end">
                         <div>
-                            <h2 class="text-3xl font-black text-slate-800">辨識儀表板</h2>
+                            <h2 class="text-2xl md:text-3xl font-black text-slate-800">辨識儀表板</h2>
                             <p class="text-slate-400 font-medium">即時分析您的飲食與預算狀態</p>
                         </div>
                     </header>
 
                     <!-- 預算概覽卡片 -->
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group">
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group">
                             <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><i class="fa-solid fa-wallet text-6xl"></i></div>
-                            <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">本月預算</p>
-                            <h3 id="budgetLimit" class="text-xl font-black text-slate-800 mt-1">$0</h3>
-                            <button onclick="setBudget()" class="mt-4 text-indigo-600 hover:text-indigo-800 text-xs font-black"><i class="fa-solid fa-pen mr-1"></i>調整限額</button>
+                            <p class="text-slate-500 text-sm font-bold uppercase tracking-wider">本月預算</p>
+                            <h3 id="budgetLimit" class="text-2xl font-black text-slate-800 mt-1">$0</h3>
+                            <button onclick="setBudget()" class="mt-4 text-indigo-600 hover:text-indigo-800 text-sm font-black"><i class="fa-solid fa-pen mr-1"></i>調整限額</button>
                         </div>
-                        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group">
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group">
                             <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><i class="fa-solid fa-cart-shopping text-6xl text-rose-500"></i></div>
-                            <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">已支出</p>
-                            <h3 id="budgetSpent" class="text-xl font-black text-rose-500 mt-1">$0</h3>
+                            <p class="text-slate-500 text-sm font-bold uppercase tracking-wider">已支出</p>
+                            <h3 id="budgetSpent" class="text-2xl font-black text-rose-500 mt-1">$0</h3>
                         </div>
-                        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group">
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group">
                             <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><i class="fa-solid fa-leaf text-6xl text-emerald-500"></i></div>
-                            <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">剩餘預算</p>
-                            <h3 id="budgetRemaining" class="text-xl font-black text-emerald-500 mt-1">$0</h3>
+                            <p class="text-slate-500 text-sm font-bold uppercase tracking-wider">剩餘預算</p>
+                            <h3 id="budgetRemaining" class="text-2xl font-black text-emerald-500 mt-1">$0</h3>
                         </div>
                     </div>
 
@@ -194,12 +196,12 @@ def root():
 
                                     <div id="aiAdviceContent" class="hidden space-y-4 animate-in slide-in-from-bottom-4 duration-700 max-h-[350px] overflow-y-auto pr-2">
                                         <div class="bg-white/10 p-5 rounded-2xl border border-white/10 backdrop-blur-md">
-                                            <p class="text-xs font-black text-indigo-300 uppercase tracking-tighter mb-2">核心總結</p>
+                                            <p class="text-sm font-black text-indigo-300 uppercase tracking-tighter mb-2">核心總結</p>
                                             <p id="aiSummary" class="text-lg font-bold leading-snug"></p>
                                         </div>
                                         <div class="bg-white/10 p-5 rounded-2xl border border-white/10 backdrop-blur-md">
-                                            <p class="text-xs font-black text-indigo-300 uppercase tracking-tighter mb-2">深入分析</p>
-                                            <p id="aiReason" class="text-sm text-indigo-50 font-medium leading-relaxed"></p>
+                                            <p class="text-sm font-black text-indigo-300 uppercase tracking-tighter mb-2">深入分析</p>
+                                            <p id="aiReason" class="text-base text-indigo-50 font-medium leading-relaxed"></p>
                                         </div>
                                         <button onclick="loadAIAdvice()" class="w-full py-3 text-xs font-bold text-indigo-300 hover:text-white transition-all text-center">重新分析 <i class="fa-solid fa-arrows-rotate ml-1"></i></button>
                                     </div>
@@ -219,11 +221,11 @@ def root():
                                 <h2 class="text-2xl font-black mb-6 text-slate-800 flex items-center"><i class="fa-solid fa-robot mr-3 text-indigo-500"></i>AI 智能辨識</h2>
                                 <div class="space-y-5">
                                     <div>
-                                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">文字描述 (選填)</label>
+                                        <label class="block text-xs font-black text-slate-400 uppercase mb-2 tracking-widest">文字描述 (選填)</label>
                                         <input type="text" id="textInput" class="w-full bg-slate-50 border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 p-4 rounded-2xl transition-all" placeholder="例如：午餐吃雞腿便當 120 元">
                                     </div>
                                     <div>
-                                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">上傳圖片</label>
+                                        <label class="block text-xs font-black text-slate-400 uppercase mb-2 tracking-widest">上傳圖片</label>
                                         <input type="file" id="fileInput" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-6 file:rounded-full file:border-0 file:text-xs file:font-black file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 transition-all cursor-pointer">
                                     </div>
                                     <button onclick="analyze()" id="btnAnalyze" class="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95">開始 AI 辨識</button>
@@ -237,10 +239,10 @@ def root():
                                 <div id="resultCard" class="hidden mt-8 p-8 rounded-3xl bg-indigo-50/50 border border-indigo-100">
                                     <h3 class="font-black text-indigo-700 mb-6 flex items-center text-lg"><i class="fa-solid fa-wand-magic-sparkles mr-2"></i>確認辨識結果</h3>
                                     <div class="grid grid-cols-2 gap-4 text-sm">
-                                        <div class="col-span-2"><label class="text-[10px] font-bold text-indigo-400 uppercase">品名</label><input id="edit_foodname" class="w-full p-3 rounded-xl border-none ring-1 ring-indigo-100 focus:ring-2 focus:ring-indigo-500"></div>
-                                        <div><label class="text-[10px] font-bold text-indigo-400 uppercase">金額</label><input type="number" id="edit_amount" class="w-full p-3 rounded-xl border-none ring-1 ring-indigo-100 focus:ring-2 focus:ring-indigo-500"></div>
-                                        <div><label class="text-[10px] font-bold text-indigo-400 uppercase">分類</label><input id="edit_category" class="w-full p-3 rounded-xl border-none ring-1 ring-indigo-100 focus:ring-2 focus:ring-indigo-500"></div>
-                                        <div class="col-span-2"><label class="text-[10px] font-bold text-indigo-400 uppercase">AI 建議</label><textarea id="edit_advice" class="w-full p-3 rounded-xl border-none ring-1 ring-indigo-100 focus:ring-2 focus:ring-indigo-500 h-20"></textarea></div>
+                                        <div class="col-span-2"><label class="text-xs font-bold text-indigo-400 uppercase">品名</label><input id="edit_foodname" class="w-full p-3 rounded-xl border-none ring-1 ring-indigo-100 focus:ring-2 focus:ring-indigo-500 text-base"></div>
+                                        <div><label class="text-xs font-bold text-indigo-400 uppercase">金額</label><input type="number" id="edit_amount" class="w-full p-3 rounded-xl border-none ring-1 ring-indigo-100 focus:ring-2 focus:ring-indigo-500 text-base"></div>
+                                        <div><label class="text-xs font-bold text-indigo-400 uppercase">分類</label><input id="edit_category" class="w-full p-3 rounded-xl border-none ring-1 ring-indigo-100 focus:ring-2 focus:ring-indigo-500 text-base"></div>
+                                        <div class="col-span-2"><label class="text-xs font-bold text-indigo-400 uppercase">AI 建議</label><textarea id="edit_advice" class="w-full p-3 rounded-xl border-none ring-1 ring-indigo-100 focus:ring-2 focus:ring-indigo-500 h-24 text-base"></textarea></div>
                                     </div>
                                     <button onclick="saveResult()" class="mt-6 w-full bg-emerald-500 text-white py-4 rounded-2xl font-black hover:bg-emerald-600 transition-all shadow-lg">確認並儲存</button>
                                 </div>
@@ -252,7 +254,7 @@ def root():
                 <!-- History Tab -->
                 <div id="tab-history" class="tab-content hidden p-4 md:p-10 space-y-8 animate-in fade-in duration-500">
                     <header>
-                        <h2 class="text-3xl font-black text-slate-800">歷史足跡</h2>
+                        <h2 class="text-2xl md:text-3xl font-black text-slate-800">歷史足跡</h2>
                         <p class="text-slate-400 font-medium">回顧您的每一筆飲食支出與健康分數</p>
                     </header>
 
@@ -265,12 +267,12 @@ def root():
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-left border-collapse">
-                                <thead>
+                                <thead class="hidden md:table-header-group">
                                     <tr class="border-b-2 border-slate-50 text-slate-400">
-                                        <th class="pb-4 font-black uppercase text-[10px] tracking-widest">日期</th>
-                                        <th class="pb-4 font-black uppercase text-[10px] tracking-widest">品名</th>
-                                        <th class="pb-4 font-black uppercase text-[10px] tracking-widest text-right">金額</th>
-                                        <th class="pb-4 font-black uppercase text-[10px] tracking-widest px-6">AI 飲食評價</th>
+                                        <th class="pb-4 font-black uppercase text-xs tracking-widest">日期</th>
+                                        <th class="pb-4 font-black uppercase text-xs tracking-widest">品名</th>
+                                        <th class="pb-4 font-black uppercase text-xs tracking-widest text-right">金額</th>
+                                        <th class="pb-4 font-black uppercase text-xs tracking-widest px-6">AI 飲食評價</th>
                                     </tr>
                                 </thead>
                                 <tbody id="historyBody" class="divide-y divide-slate-50"></tbody>
@@ -444,12 +446,19 @@ def root():
 
                     const body = document.getElementById('historyBody');
                     body.innerHTML = data.map(r => `
-                        <tr class="border-b border-slate-50 hover:bg-indigo-50/50 transition-colors group">
-                            <td class="py-4 text-slate-400 font-medium">${r.date}</td>
-                            <td class="py-4 font-black text-slate-700">${r.foodname}</td>
-                            <td class="py-4 text-right font-black text-indigo-600">$${r.amount}</td>
-                            <td class="py-4 px-4">
-                                <div class="bg-indigo-50 text-indigo-600 p-2 rounded-lg text-xs leading-relaxed italic border border-indigo-100 group-hover:bg-white transition-all">
+                        <tr class="block md:table-row border-b border-slate-50 hover:bg-indigo-50/50 transition-all group mb-4 md:mb-0 p-4 md:p-0 bg-white md:bg-transparent rounded-2xl md:rounded-none shadow-sm md:shadow-none border border-slate-100 md:border-0">
+                            <td class="block md:table-cell py-1 md:py-4 text-slate-400 font-medium text-xs md:text-sm">
+                                <span class="md:hidden font-bold text-slate-500 mr-2">日期:</span>${r.date}
+                            </td>
+                            <td class="block md:table-cell py-1 md:py-4 font-black text-slate-700 text-lg md:text-base">
+                                <span class="md:hidden font-bold text-slate-500 mr-2">品名:</span>${r.foodname}
+                            </td>
+                            <td class="block md:table-cell py-1 md:py-4 md:text-right font-black text-indigo-600 text-xl md:text-base">
+                                <span class="md:hidden font-bold text-slate-500 mr-2">金額:</span>$${r.amount}
+                            </td>
+                            <td class="block md:table-cell py-2 md:py-4 md:px-4">
+                                <div class="bg-indigo-50 text-indigo-600 p-3 rounded-xl text-xs leading-relaxed italic border border-indigo-100 group-hover:bg-white transition-all">
+                                    <span class="md:hidden block font-black not-italic mb-1 text-indigo-400 uppercase text-[10px]">AI 建議</span>
                                     ${r.advice}
                                 </div>
                             </td>
