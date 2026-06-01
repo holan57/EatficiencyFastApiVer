@@ -2,13 +2,13 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import RedirectResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import Optional, List
-import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from google.genai import types, Client
 import json
 import os
 from datetime import datetime
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,8 +24,41 @@ MODEL_NAME = 'gemini-2.5-flash-lite'
 # 初始化 Gemini
 client = Client(api_key=GOOGLE_API_KEY)
 
-# --- Google Sheets 授權 ---
+# --- 快取層 ---
+# 快取 gspread 客戶端與 spreadsheet 物件，避免每次請求都重新認證
+_cached_gc = None
+_cached_sh = None
+
+# 資料快取：{ key: { "data": ..., "ts": timestamp } }
+_data_cache = {}
+CACHE_TTL = 60  # 快取有效期：60 秒
+
+
+def _cache_get(key: str):
+    """取得快取資料，若過期則回傳 None"""
+    entry = _data_cache.get(key)
+    if entry and (time.time() - entry["ts"]) < CACHE_TTL:
+        return entry["data"]
+    return None
+
+
+def _cache_set(key: str, data):
+    """寫入快取"""
+    _data_cache[key] = {"data": data, "ts": time.time()}
+
+
+def _cache_invalidate(*keys):
+    """清除指定的快取 key"""
+    for key in keys:
+        _data_cache.pop(key, None)
+
+
+# --- Google Sheets 授權（帶快取） ---
 def get_sheet_client():
+    global _cached_gc
+    if _cached_gc is not None:
+        return _cached_gc
+
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     # 這裡假設你的 Service Account JSON 存在環境變數中或檔案中
     creds_json = os.getenv("GOOGLE_SHEETS_CREDENTIALS")
@@ -51,19 +84,40 @@ def get_sheet_client():
         if not os.path.exists("service_account.json"):
             raise FileNotFoundError("找不到 service_account.json 且環境變數 GOOGLE_SHEETS_CREDENTIALS 未設定")
         creds = Credentials.from_service_account_file("service_account.json", scopes=scopes)
-    return gspread.authorize(creds)
+
+    _cached_gc = gspread.authorize(creds)
+    return _cached_gc
+
+
+def get_spreadsheet():
+    """取得 spreadsheet 物件（帶快取）"""
+    global _cached_sh
+    if _cached_sh is not None:
+        return _cached_sh
+    gc = get_sheet_client()
+    _cached_sh = gc.open_by_key(SHEET_ID)
+    return _cached_sh
+
 
 def get_worksheet(name: str):
     try:
-        gc = get_sheet_client()
-        sh = gc.open_by_key(SHEET_ID)
+        sh = get_spreadsheet()
         return sh.worksheet(name)
     except gspread.exceptions.SpreadsheetNotFound:
         raise HTTPException(status_code=500, detail=f"找不到 ID 為 {SHEET_ID} 的試算表。請確認 ID 是否正確且已分享給 Service Account。")
     except gspread.exceptions.WorksheetNotFound:
         raise HTTPException(status_code=500, detail=f"試算表內找不到名為 '{name}' 的工作表。")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Google Sheets 存取失敗: {str(e)}")
+        # 如果連線失敗（例如 token 過期），清除快取重試一次
+        global _cached_gc, _cached_sh
+        _cached_gc = None
+        _cached_sh = None
+        try:
+            sh = get_spreadsheet()
+            return sh.worksheet(name)
+        except Exception as e2:
+            raise HTTPException(status_code=500, detail=f"Google Sheets 存取失敗: {str(e2)}")
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -73,6 +127,34 @@ async def startup_event():
         print("✅ Google Sheets 連線成功！\n")
     except Exception as e:
         print(f"❌ Google Sheets 連線失敗: {e}\n")
+
+
+# --- 不用 pandas 的資料處理工具 ---
+def _normalize_records(records: list, column_mapping: dict) -> list:
+    """將記錄的 key 正規化：先轉小寫去空白，再套用中英文映射"""
+    result = []
+    for row in records:
+        normalized = {}
+        for k, v in row.items():
+            new_key = str(k).strip().lower()
+            new_key = column_mapping.get(new_key, new_key)
+            normalized[new_key] = v
+        result.append(normalized)
+    return result
+
+
+# 中英文欄位映射
+HISTORY_COLUMN_MAPPING = {
+    '日期': 'date',
+    '品名': 'foodname',
+    '金額': 'amount',
+    '建議': 'advice',
+    '使用者名稱': 'user_name',
+    '分類': 'category',
+    '熱量': 'calories',
+    '健康評分': 'health_score',
+}
+
 
 # --- 資料模型 (Pydantic) ---
 class ExpenseItem(BaseModel):
@@ -99,11 +181,13 @@ def root():
     <html>
         <head>
             <title>Eatficiency Dashboard</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <script src="https://cdn.tailwindcss.com"></script>
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
             <style>
                 html { font-size: 16px; -webkit-text-size-adjust: 100%; }
-                @media (max-width: 640px) { html { font-size: 14px; } }
+                @media (max-width: 640px) { html { font-size: 16px; } }
                 .loading { border-top-color: #3498db; animation: spinner 1.5s linear infinite; }
                 @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
                 .tab-active { @apply bg-indigo-800 text-white shadow-inner; }
@@ -161,23 +245,30 @@ def root():
                         </div>
                     </header>
 
-                    <!-- 預算概覽卡片 -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group">
-                            <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><i class="fa-solid fa-wallet text-6xl"></i></div>
-                            <p class="text-slate-500 text-sm font-bold uppercase tracking-wider">本月預算</p>
-                            <h3 id="budgetLimit" class="text-2xl font-black text-slate-800 mt-1">$0</h3>
-                            <button onclick="setBudget()" class="mt-4 text-indigo-600 hover:text-indigo-800 text-sm font-black"><i class="fa-solid fa-pen mr-1"></i>調整限額</button>
+                    <!-- 整合式預算概覽面板 -->
+                    <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="font-black text-slate-800 flex items-center text-sm md:text-base"><i class="fa-solid fa-chart-pie mr-2 text-indigo-500"></i>預算概覽</h3>
+                            <div class="flex items-center space-x-2">
+                                <select id="monthSelect" onchange="loadBudget()" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-2 rounded-xl border-none ring-1 ring-indigo-100 focus:ring-2 focus:ring-indigo-500"></select>
+                                <button onclick="setBudget()" class="text-xs font-black text-indigo-600 bg-indigo-50 px-3 py-2 rounded-full hover:bg-indigo-100 transition-all flex items-center">
+                                    <i class="fa-solid fa-pen-to-square mr-1"></i>限額
+                                </button>
+                            </div>
                         </div>
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group">
-                            <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><i class="fa-solid fa-cart-shopping text-6xl text-rose-500"></i></div>
-                            <p class="text-slate-500 text-sm font-bold uppercase tracking-wider">已支出</p>
-                            <h3 id="budgetSpent" class="text-2xl font-black text-rose-500 mt-1">$0</h3>
-                        </div>
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group">
-                            <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><i class="fa-solid fa-leaf text-6xl text-emerald-500"></i></div>
-                            <p class="text-slate-500 text-sm font-bold uppercase tracking-wider">剩餘預算</p>
-                            <h3 id="budgetRemaining" class="text-2xl font-black text-emerald-500 mt-1">$0</h3>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div class="text-center">
+                                <p class="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest mb-1">本月預算</p>
+                                <p id="budgetLimit" class="text-lg md:text-xl font-black text-slate-800">$0</p>
+                            </div>
+                            <div class="text-center border-x border-slate-100">
+                                <p class="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest mb-1">已支出</p>
+                                <p id="budgetSpent" class="text-lg md:text-xl font-black text-rose-500">$0</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest mb-1">剩餘預算</p>
+                                <p id="budgetRemaining" class="text-lg md:text-xl font-black text-emerald-500">$0</p>
+                            </div>
                         </div>
                     </div>
 
@@ -280,7 +371,7 @@ def root():
                         </div>
                     </div>
                 </div>
-            </nav>
+            </main>
 
             <script>
                 let currentResult = null;
@@ -310,6 +401,7 @@ def root():
                     if (window.innerWidth < 1024) toggleSidebar();
                 }
 
+                // 優化：使用 /batch-init 一次載入所有初始資料
                 async function loadUsers() {
                     try {
                         const res = await fetch('/users');
@@ -317,11 +409,29 @@ def root():
                         const select = document.getElementById('userSelect');
                         select.innerHTML = users.map(u => `<option value="${u}">${u}</option>`).join('');
                         if(users.length > 0) {
-                            loadHistory();
-                            loadBudget();
+                            // 使用批次 API 同時載入歷史和預算，減少請求次數
+                            await loadInitData(users[0]);
                             resetAIAdvice();
                         }
                     } catch(e) { console.error("Load users failed"); }
+                }
+
+                // 新增：批次載入初始資料（一次請求取代兩次）
+                async function loadInitData(userName) {
+                    try {
+                        const res = await fetch(`/batch-init/${userName}`);
+                        const data = await res.json();
+                        
+                        // 渲染歷史紀錄
+                        renderHistory(data.expenses);
+                        
+                        // 渲染預算
+                        renderBudget(data.budget);
+                    } catch(e) {
+                        console.error("Batch init failed, falling back to separate calls");
+                        loadHistory();
+                        loadBudget();
+                    }
                 }
 
                 async function addUser() {
@@ -400,8 +510,18 @@ def root():
 
                 async function loadBudget() {
                     const user = document.getElementById('userSelect').value;
-                    const res = await fetch(`/budget/${user}`);
+                    const month = document.getElementById('monthSelect').value;
+                    if (!user) return;
+                    
+                    let url = `/budget/${user}`;
+                    if (month) url += `?month=${month}`;
+                    
+                    const res = await fetch(url);
                     const data = await res.json();
+                    renderBudget(data);
+                }
+
+                function renderBudget(data) {
                     document.getElementById('budgetLimit').innerText = `$${data.limit.toLocaleString()}`;
                     document.getElementById('budgetSpent').innerText = `$${data.spent.toLocaleString()}`;
                     document.getElementById('budgetRemaining').innerText = `$${data.remaining.toLocaleString()}`;
@@ -437,13 +557,19 @@ def root():
                     const user = document.getElementById('userSelect').value;
                     const res = await fetch(`/expenses/${user}`);
                     const data = await res.json();
+                    renderHistory(data);
+                }
+
+                function renderHistory(data) {
                     console.log("抓取到的歷史紀錄資料:", data);
                     
                     if (!data || data.length === 0) {
                         document.getElementById('historyBody').innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-400">尚無歷史紀錄</td></tr>';
+                        updateMonthSelector([]);
                         return;
                     }
 
+                    updateMonthSelector(data);
                     const body = document.getElementById('historyBody');
                     body.innerHTML = data.map(r => `
                         <tr class="block md:table-row border-b border-slate-50 hover:bg-indigo-50/50 transition-all group mb-4 md:mb-0 p-4 md:p-0 bg-white md:bg-transparent rounded-2xl md:rounded-none shadow-sm md:shadow-none border border-slate-100 md:border-0">
@@ -466,7 +592,23 @@ def root():
                     `).reverse().join('');
                 }
 
-                document.getElementById('userSelect').onchange = () => { loadHistory(); loadBudget(); };
+                function updateMonthSelector(records) {
+                    const monthSelect = document.getElementById('monthSelect');
+                    const prevValue = monthSelect.value;
+                    
+                    // 從歷史紀錄提取唯一月份 (YYYY-MM)
+                    const months = [...new Set(records.map(r => (r.date || "").substring(0, 7).replace('/', '-')))];
+                    const currentMonth = new Date().toISOString().substring(0, 7);
+                    
+                    if (!months.includes(currentMonth)) months.push(currentMonth);
+                    months.sort().reverse();
+                    
+                    monthSelect.innerHTML = months.map(m => 
+                        `<option value="${m}" ${m === (prevValue || currentMonth) ? 'selected' : ''}>${m}</option>`
+                    ).join('');
+                }
+
+                document.getElementById('userSelect').onchange = () => { loadInitData(document.getElementById('userSelect').value); };
                 loadUsers();
             </script>
         </body>
@@ -477,9 +619,15 @@ def root():
 @app.get("/users")
 def list_users():
     """獲取所有使用者清單"""
+    cached = _cache_get("users")
+    if cached is not None:
+        return cached
+
     try:
         ws = get_worksheet("User_Data")
-        return ws.col_values(2)[1:] # 名稱在第二欄，跳過第一列標題
+        users = ws.col_values(2)[1:]  # 名稱在第二欄，跳過第一列標題
+        _cache_set("users", users)
+        return users
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -489,65 +637,90 @@ def register_user(user_name: str):
     ws = get_worksheet("User_Data")
     if user_name not in ws.col_values(2):
         ws.append_row(["", user_name]) # 插入資料至第二欄 (第一欄留空)
+        _cache_invalidate("users")
         return {"status": "success", "message": f"User {user_name} added"}
     return {"status": "exists"}
+
+
+def _get_all_history_records() -> list:
+    """取得所有歷史紀錄（帶快取），回傳已正規化的 list[dict]"""
+    cached = _cache_get("history_all")
+    if cached is not None:
+        return cached
+
+    ws = get_worksheet("History_record")
+    records = ws.get_all_records(head=1)
+    if not records:
+        _cache_set("history_all", [])
+        return []
+
+    normalized = _normalize_records(records, HISTORY_COLUMN_MAPPING)
+    _cache_set("history_all", normalized)
+    return normalized
+
 
 @app.get("/expenses/{user_name}")
 def get_user_expenses(user_name: str):
     """獲取特定使用者的歷史紀錄"""
-    ws = get_worksheet("History_record")
-    # 取得所有資料，並確保標題列處理正確
-    records = ws.get_all_records(head=1)
-    if not records:
+    all_records = _get_all_history_records()
+
+    if not all_records:
         return []
-        
-    df = pd.DataFrame(records)
-    # 強制將所有欄位名稱轉為小寫並去除空白，防止 Google Sheet 標題打錯
-    df.columns = [str(c).strip().lower() for c in df.columns]
-    
-    # 中英文欄位映射：確保前端能讀取到正確的 key
-    mapping = {
-        '日期': 'date',
-        '品名': 'foodname',
-        '金額': 'amount',
-        '建議': 'advice',
-        '使用者名稱': 'user_name',
-        '分類': 'category',
-        '熱量': 'calories',
-        '健康評分': 'health_score'
-    }
-    df.rename(columns=mapping, inplace=True)
 
     # 偵測欄位是否存在，若不存在則印出目前有的欄位方便除錯
-    if 'user_name' not in df.columns:
-        print(f"錯誤：工作表缺少 'user_name' 欄位。目前的欄位有: {df.columns.tolist()}")
+    if all_records and 'user_name' not in all_records[0]:
+        print(f"錯誤：工作表缺少 'user_name' 欄位。目前的欄位有: {list(all_records[0].keys())}")
         return []
 
-    # 過濾資料時也去除內容空白
-    user_df = df[df['user_name'].astype(str).str.strip() == user_name.strip()]
-    return user_df.to_dict(orient="records")
+    # 過濾資料
+    user_name_stripped = user_name.strip()
+    return [r for r in all_records if str(r.get('user_name', '')).strip() == user_name_stripped]
+
 
 @app.get("/budget/{user_name}")
-def get_budget_status(user_name: str):
+def get_budget_status(user_name: str, month: Optional[str] = None):
     """獲取預算與支出概況"""
-    # 1. 計算支出
-    expenses = get_user_expenses(user_name)
-    now_month = datetime.now().strftime("%Y-%m")
-    spent = sum(int(e.get('amount', 0)) for e in expenses if str(e.get('date', '')).startswith(now_month))
-    
-    # 2. 獲取預算上限
+    def safe_int(val):
+        try:
+            if not val or str(val).strip() == "": return 0
+            return int(float(str(val).replace(',', '')))
+        except:
+            return 0
+
+    # 1. 計算支出 —— 直接使用快取的歷史紀錄，不再重複呼叫 get_user_expenses
+    all_records = _get_all_history_records()
+    user_name_stripped = user_name.strip()
+    target_month = month if month else datetime.now().strftime("%Y-%m")
+
+    spent = 0
+    for e in all_records:
+        if str(e.get('user_name', '')).strip() != user_name_stripped:
+            continue
+        date_str = str(e.get('date', '')).replace('/', '-')
+        if date_str.startswith(target_month):
+            spent += safe_int(e.get('amount', 0))
+
+    # 2. 獲取預算上限（帶快取）
     limit = 15000
-    try:
-        ws = get_worksheet("Budget")
-        records = ws.get_all_records()
-        # 從後往前找，取得該使用者最新的預算設定
-        for r in reversed(records):
-            if str(r.get('user_name', '')).strip() == user_name.strip():
-                limit = int(r.get('budget_limit', 15000))
-                break
-    except: pass # 若無 Budget 表或讀取失敗則維持預設值 15000
+    budget_records = _cache_get("budget_all")
+    if budget_records is None:
+        try:
+            ws = get_worksheet("Budget")
+            budget_records = ws.get_all_records(head=1)
+            _cache_set("budget_all", budget_records)
+        except:
+            budget_records = []
+
+    # 從後往前找，取得該使用者最新的預算設定，並相容中英文欄位名稱
+    for r in reversed(budget_records):
+        r_user = r.get('user_name') or r.get('使用者名稱')
+        r_limit = r.get('budget_limit') or r.get('預算上限')
+        if str(r_user or '').strip() == user_name_stripped:
+            limit = safe_int(r_limit) if r_limit else 15000
+            break
 
     return {"limit": limit, "spent": spent, "remaining": limit - spent}
+
 
 class BudgetUpdate(BaseModel):
     user_name: str
@@ -561,6 +734,7 @@ def update_budget(data: BudgetUpdate):
     if not ws.get_all_values():
         ws.append_row(["user_name", "budget_limit"])
     ws.append_row([data.user_name, data.budget_limit])
+    _cache_invalidate("budget_all")
     return {"status": "success"}
 
 @app.post("/expenses")
@@ -573,6 +747,7 @@ def save_expense(item: ExpenseItem):
             ws.append_row(list(item.dict().keys()))
         
         ws.append_row(list(item.dict().values()))
+        _cache_invalidate("history_all")  # 寫入後清除快取
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -584,11 +759,23 @@ async def analyze_transaction(
     file: Optional[UploadFile] = File(None)
 ):
     """AI 辨識端點：支援文字或圖片"""
-    # 取得參考資料
-    ref_ws = get_worksheet("ref_data")
-    ref_data = pd.DataFrame(ref_ws.get_all_records()).to_string(index=False)
+    # 取得參考資料（帶快取，ref_data 幾乎不會變動）
+    ref_text = _cache_get("ref_data_text")
+    if ref_text is None:
+        ref_ws = get_worksheet("ref_data")
+        ref_records = ref_ws.get_all_records()
+        # 直接手動格式化為字串，避免使用 pandas
+        if ref_records:
+            headers = list(ref_records[0].keys())
+            lines = ["\t".join(headers)]
+            for row in ref_records:
+                lines.append("\t".join(str(row.get(h, "")) for h in headers))
+            ref_text = "\n".join(lines)
+        else:
+            ref_text = ""
+        _cache_set("ref_data_text", ref_text)
 
-    prompt = f"分析食物資料：{text or '請辨識圖片內容'}。參考清單：{ref_data}"
+    prompt = f"分析食物資料：{text or '請辨識圖片內容'}。參考清單：{ref_text}"
     
     image_content = None
     if file:
@@ -604,10 +791,19 @@ async def analyze_transaction(
     )
     return json.loads(response.text)
 
+
+@app.get("/batch-init/{user_name}")
+def batch_init(user_name: str):
+    """批次載入初始資料：歷史紀錄 + 預算，減少前端請求次數"""
+    expenses = get_user_expenses(user_name)
+    budget = get_budget_status(user_name)
+    return {"expenses": expenses, "budget": budget}
+
+
 @app.get("/overall-advice/{user_name}")
 def get_ai_advice(user_name: str):
     """獲取該使用者的整體 AI 建議"""
-    # 獲取歷史紀錄
+    # 獲取歷史紀錄（使用快取）
     expenses = get_user_expenses(user_name)
     if not expenses:
         return {"analysis": {"summary": "尚無資料可分析", "reason": ""}}
