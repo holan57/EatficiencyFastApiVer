@@ -194,7 +194,7 @@ def root():
                 .sidebar-item { @apply flex items-center space-x-3 px-4 py-3 rounded-xl transition-all cursor-pointer hover:bg-indigo-800/50; }
              </style>
         </head>
-        <body class="bg-slate-50 min-h-screen font-sans text-slate-900 flex overflow-x-hidden">
+        <body class="bg-slate-50 min-h-screen font-sans text-slate-900 lg:flex overflow-x-hidden">
             <!-- Mobile Sidebar Overlay -->
             <div id="sidebarOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-indigo-950/50 z-40 hidden lg:hidden backdrop-blur-sm transition-opacity"></div>
 
@@ -228,7 +228,7 @@ def root():
             </aside>
 
             <!-- Main Content -->
-            <main class="flex-1 overflow-y-auto h-screen relative w-full">
+            <main class="flex-1 min-w-0 overflow-y-auto h-screen relative w-full">
                 <!-- Mobile Header -->
                 <div class="lg:hidden bg-indigo-900 text-white p-4 flex items-center justify-between sticky top-0 z-30 shadow-md">
                     <button onclick="toggleSidebar()" class="p-2 hover:bg-indigo-800 rounded-lg"><i class="fa-solid fa-bars text-xl"></i></button>
