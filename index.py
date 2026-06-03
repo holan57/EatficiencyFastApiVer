@@ -373,7 +373,7 @@ def root():
                         document.getElementById('edit_foodname').value = currentResult.foodname || "";
                         document.getElementById('edit_amount').value = currentResult.amount || 0;
                         document.getElementById('edit_category').value = currentResult.category || "其他";
-                        document.getElementById('edit_date').value = currentResult.date || new Date().toLocaleDateString('en-CA');
+                        document.getElementById('edit_date').value = new Date().toLocaleDateString('en-CA');
                         document.getElementById('edit_advice').value = currentResult.advice || "";
                         
                         document.getElementById('resultCard').classList.remove('hidden');
@@ -388,7 +388,7 @@ def root():
                     const user = document.getElementById('userSelect').value;
                     const data = { 
                         user_name: user,
-                        date: document.getElementById('edit_date').value || currentResult.date || new Date().toLocaleDateString('en-CA'),
+                        date: document.getElementById('edit_date').value || new Date().toLocaleDateString('en-CA'),
                         foodname: document.getElementById('edit_foodname').value,
                         amount: parseInt(document.getElementById('edit_amount').value),
                         category: document.getElementById('edit_category').value,
