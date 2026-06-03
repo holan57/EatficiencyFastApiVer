@@ -5,3 +5,4 @@ google-auth
 google-genai
 python-multipart
 python-dotenv
+pandas
