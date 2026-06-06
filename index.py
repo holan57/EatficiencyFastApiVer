@@ -345,9 +345,14 @@ def root():
                 async function setBudget() {
                     const user = document.getElementById('userSelect').value;
                     const amount = prompt("請輸入本月預算上限:");
-                    if(amount) {
-                        await fetch(`/budget`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_name: user, budget_limit: parseInt(amount)}) });
-                        loadBudget();
+                    if(amount !== null && amount !== "") {
+                        const res = await fetch(`/budget`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_name: user, budget_limit: parseInt(amount)}) });
+                        if(res.ok) {
+                            alert("預算更新成功！");
+                            loadBudget();
+                        } else {
+                            alert("預算更新失敗，請確認 Google Sheet 是否包含 'Budget' 工作表。");
+                        }
                     }
                 }
 
@@ -599,15 +604,19 @@ def get_budget_status(user_name: str, month: Optional[str] = None):
     limit = 15000
     try:
         ws = get_worksheet("Budget")
-        records = ws.get_all_records(head=1)
+        records = ws.get_all_records()
         # 從後往前找，取得該使用者最新的預算設定，並相容中英文欄位名稱
         for r in reversed(records):
-            r_user = r.get('user_name') or r.get('使用者名稱')
-            r_limit = r.get('budget_limit') or r.get('預算上限')
+            # 正規化 Key：去除前後空白並轉小寫，增加匹配成功率
+            norm_r = {str(k).strip().lower(): v for k, v in r.items()}
+            r_user = norm_r.get('user_name') or norm_r.get('使用者名稱')
+            r_limit = norm_r.get('budget_limit') or norm_r.get('預算上限')
+            
             if str(r_user or '').strip() == user_name.strip():
-                limit = safe_int(r_limit) if r_limit else 15000
-                break
-    except: pass # 若無 Budget 表或讀取失敗則維持預設值 15000
+                if r_limit is not None and str(r_limit).strip() != "":
+                    limit = safe_int(r_limit)
+                    break
+    except Exception: pass # 若無 Budget 表或讀取失敗則維持預設值 15000
 
     return {"limit": limit, "spent": spent, "remaining": limit - spent}
 
@@ -618,10 +627,21 @@ class BudgetUpdate(BaseModel):
 @app.post("/budget")
 def update_budget(data: BudgetUpdate):
     """更新預算設定"""
-    ws = get_worksheet("Budget")
-    # 如果工作表是空的，先寫入標題以確保功能運作正常
-    if not ws.get_all_values():
+    try:
+        ws = get_worksheet("Budget")
+    except HTTPException:
+        # 如果工作表不存在，則嘗試建立它
+        gc = get_sheet_client()
+        sh = gc.open_by_key(SHEET_ID)
+        try:
+            ws = sh.worksheet("Budget")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh.add_worksheet(title="Budget", rows="100", cols="2")
+            ws.append_row(["user_name", "budget_limit"])
+            
+    if not ws.get_all_values(): # 若工作表內容為空，補上標題列
         ws.append_row(["user_name", "budget_limit"])
+        
     ws.append_row([data.user_name, data.budget_limit])
     return {"status": "success"}
 
